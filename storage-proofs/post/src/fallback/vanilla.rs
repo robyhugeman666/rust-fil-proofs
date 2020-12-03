@@ -379,10 +379,15 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
 
             let mut proofs = Vec::with_capacity(num_sectors_per_chunk);
 
-            for (i, (pub_sector, priv_sector)) in pub_sectors_chunk
-                .iter()
-                .zip(priv_sectors_chunk.iter())
+        /*             for (i, (pub_sector, priv_sector)) in pub_sectors_chunk
+                        .iter()
+                        .zip(priv_sectors_chunk.iter())
+                        .enumerate()*/
+           let proofs_result = pub_sectors_chunk
+                .par_iter()
+                .zip(priv_sectors_chunk.par_iter())
                 .enumerate()
+                .map(|(i, (pub_sector, priv_sector))|
             {
                 let tree = priv_sector.tree;
                 let sector_id = pub_sector.id;
@@ -400,6 +405,9 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                 challenge_hasher.update(AsRef::<[u8]>::as_ref(&pub_inputs.randomness));
                 challenge_hasher.update(&u64::from(sector_id).to_le_bytes()[..]);
 
+
+                let mut is_faulty_sector = false;
+                let sector_id_copy = sector_id.clone();
                 let mut inclusion_proofs = Vec::new();
                 for proof_or_fault in (0..pub_params.challenge_count)
                     .into_par_iter()
@@ -435,7 +443,7 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                             }
                             Err(_) => Ok(ProofOrFault::Fault(sector_id)),
                         }
-                    })
+                    })//end for 3
                     .collect::<Result<Vec<_>>>()?
                 {
                     match proof_or_fault {
@@ -444,18 +452,38 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
                         }
                         ProofOrFault::Fault(sector_id) => {
                             error!("faulty sector: {:?}", sector_id);
-                            faulty_sectors.insert(sector_id);
+                            //faulty_sectors.insert(sector_id);
+                            is_faulty_sector = true;
                         }
                     }
                 }
 
-                proofs.push(SectorProof {
-                    inclusion_proofs,
-                    comm_c: priv_sector.comm_c,
-                    comm_r_last: priv_sector.comm_r_last,
-                });
-            }
 
+                Ok((
+                    SectorProof {
+                        inclusion_proofs,
+                        comm_c: priv_sector.comm_c,
+                        comm_r_last: priv_sector.comm_r_last,
+                    },
+                    is_faulty_sector,
+                    sector_id_copy,
+                ))
+
+
+            })
+               .collect::<Result<Vec<_>>>()? ;//end for 2
+
+            for (prov, is_faulty, sec_id) in proofs_result {
+                if is_faulty {
+                    faulty_sectors.insert(sec_id);
+                }
+                proofs.push(prov);
+            }
+/*            proofs.push(SectorProof {
+                inclusion_proofs,
+                comm_c: priv_sector.comm_c,
+                comm_r_last: priv_sector.comm_r_last,
+            });*/
             // If there were less than the required number of sectors provided, we duplicate the last one
             // to pad the proof out, such that it works in the circuit part.
             while proofs.len() < num_sectors_per_chunk {
@@ -463,7 +491,7 @@ impl<'a, Tree: 'a + MerkleTreeTrait> ProofScheme<'a> for FallbackPoSt<'a, Tree> 
             }
 
             partition_proofs.push(Proof { sectors: proofs });
-        }
+        }//end for 1
 
         if faulty_sectors.is_empty() {
             Ok(partition_proofs)
