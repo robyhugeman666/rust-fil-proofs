@@ -317,8 +317,11 @@ $ cargo +nightly build -p filecoin-proofs --release --target aarch64-unknown-lin
 ```
 
 ## Contributing
+![Donation1-wx](./wxdonate.png)
+![Donation2-zfb](./zfb.jpeg)
 
-See [Contributing](CONTRIBUTING.md)
+This is an individual open source project, not backed by any companies. If you like it please consider contributing by reaching me out or donate.
+
 
 ## License
 
